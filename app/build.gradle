@@ -1,6 +1,4 @@
 apply plugin: 'com.android.application'
-apply plugin: 'com.gladed.androidgitversion'
-apply plugin: 'witness'
 
 def rpx = project.rootProject.ext
 
@@ -45,7 +43,7 @@ android {
     }
 
 
-    compileSdkVersion 28
+    compileSdkVersion 31
 
     defaultConfig {
         applicationId "io.oversec.one"
@@ -55,12 +53,6 @@ android {
         //hardcoded for F-droid bot
         versionCode = 1005015
         versionName = "1.5.15"
-
-        //still need to make sure this is in sync with the git tags
-        def versionCodeFromGit =  androidGitVersion.code()
-        if (versionCode!=versionCodeFromGit) {
-            throw new Exception(String.format("Version Code Mismatch, %d <-> %d\nPlease update hardcoded versionCode/versionName",versionCode,versionCodeFromGit))
-        }
 
         buildConfigField "java.lang.Boolean", "IS_FRDOID", "new Boolean("+project.hasProperty("fdroid")+")"
 
@@ -164,22 +156,13 @@ android {
 
     // NOTE: Lint is disabled because it slows down builds,
     // to enable it comment out the code at the bottom of this build.gradle
-    lintOptions {
+    lint {
         // Do not abort build if lint finds errors
         abortOnError false
 
         checkAllWarnings true
         htmlReport true
         htmlOutput file('lint-report.html')
-    }
-
-    dexOptions {
-        threadCount = 6
-        preDexLibraries = true
-        // dexInProcess requires much RAM, which is not available on all dev systems
-        // dexInProcess = false
-        jumboMode = true
-        javaMaxHeapSize "6g"
     }
 
     packagingOptions {
@@ -202,23 +185,16 @@ dependencies {
     implementation 'org.sufficientlysecure:html-textview:3.6'
     implementation 'org.commonjava.googlecode.markdown4j:markdown4j:2.2-cj-1.1'
 
-    implementation 'com.android.support:multidex:1.0.3'
-    implementation 'com.android.support:support-v13:28.0.0'
-    implementation 'com.android.support:appcompat-v7:28.0.0'
-    implementation 'com.android.support:cardview-v7:28.0.0'
-    implementation 'com.android.support:support-v4:28.0.0'
-    implementation 'com.android.support:design:28.0.0'
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'androidx.legacy:legacy-support-v13:1.0.0'
+    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+    implementation 'androidx.appcompat:appcompat:1.4.2'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.recyclerview:recyclerview:1.2.1'
+    implementation 'com.google.android.material:material:1.6.1'
 
     testImplementation 'junit:junit:4.12'
     testImplementation project(':libraries:oversec_crypto:crypto')
-}
-
-//Note: update with  ./gradlew  -q calculateChecksums
-dependencyVerification {
-    verify = [
-            'org.commonjava.googlecode.markdown4j:markdown4j:2.2-cj-1.1:markdown4j-2.2-cj-1.1.jar:28eb991f702c6d85d6cafd68c24d1ce841d1f5c995c943f25aedb433c0c13f60',
-            'org.sufficientlysecure:html-textview:3.6:html-textview-3.6.aar:39c1a1a8ca1d127f0120527b2d1a9b035d0c726237a4e7e9d28f8703da542aa1',
-    ]
 }
 
 // NOTE: This disables Lint!
@@ -248,29 +224,31 @@ rpx.replaceEntities = { apptgt, sfile, tdir, tfile ->
     ant.replace(file: "$tfile.canonicalPath", token: "&dllink;", value: rpx.APPTGTS[apptgt].dllink)
 }
 
-task preBuildMangleEntities << {
-    def tasknames = project.gradle.startParameter.taskNames
+task preBuildMangleEntities {
+    doLast {
+        def tasknames = project.gradle.startParameter.taskNames
 
-    def taskname = tasknames[0]
-    def apptgt = taskname.replace(":app:","").replace("assemble","").replace("test","").replace("generate","").replace("install","").replace("Debug","").replace("Release","").replace("Sources","").replace("UnitTest","").toLowerCase()
-    if (apptgt.isEmpty()) {apptgt = "intern"}
+        def taskname = tasknames ? tasknames[0] : ""
+        def apptgt = taskname.replace(":app:","").replace("assemble","").replace("test","").replace("generate","").replace("install","").replace("Debug","").replace("Release","").replace("Sources","").replace("UnitTest","").toLowerCase()
+        if (apptgt.isEmpty()) {apptgt = "intern"}
 
-    def rootDir = project.projectDir.getParent()
+        def rootDir = project.projectDir.getParent()
 
-    rpx.langs.each {
-        def tdir = new File(rootDir, "app/src/" + apptgt + "/res/values${it}")
+        rpx.langs.each {
+            def tdir = new File(rootDir, "app/src/" + apptgt + "/res/values${it}")
 
-        def sfile = new File(rootDir, "app/src/appsec-common/res/values${it}/strings.xml")
-        def tfile = new File(tdir, "strings_generated.xml")
-        replaceEntities (apptgt, sfile, tdir, tfile)
+            def sfile = new File(rootDir, "app/src/appsec-common/res/values${it}/strings.xml")
+            def tfile = new File(tdir, "strings_generated.xml")
+            replaceEntities (apptgt, sfile, tdir, tfile)
 
-        sfile = new File(rootDir, "libraries/oversec_crypto/crypto/src/main/res/values${it}/strings.xml")
-        tfile = new File(tdir, "strings_crypto_generated.xml")
-        replaceEntities (apptgt, sfile, tdir, tfile)
+            sfile = new File(rootDir, "libraries/oversec_crypto/crypto/src/main/res/values${it}/strings.xml")
+            tfile = new File(tdir, "strings_crypto_generated.xml")
+            replaceEntities (apptgt, sfile, tdir, tfile)
 
-        sfile = new File(rootDir, "libraries/oversec_crypto/crypto/src/main/res/values${it}/strings_core.xml")
-        tfile = new File(tdir, "strings_crypto_core_generated.xml")
-        replaceEntities (apptgt, sfile, tdir, tfile)
+            sfile = new File(rootDir, "libraries/oversec_crypto/crypto/src/main/res/values${it}/strings_core.xml")
+            tfile = new File(tdir, "strings_crypto_core_generated.xml")
+            replaceEntities (apptgt, sfile, tdir, tfile)
+        }
     }
 }
 
