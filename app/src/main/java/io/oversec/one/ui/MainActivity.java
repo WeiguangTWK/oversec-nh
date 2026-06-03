@@ -1,19 +1,21 @@
 package io.oversec.one.ui;
 
-import android.app.Fragment;
-import android.app.FragmentManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import com.google.android.material.tabs.TabLayout;
-import androidx.legacy.app.FragmentPagerAdapter;
-import androidx.viewpager.widget.ViewPager;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 import android.view.Menu;
 import android.view.MenuItem;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.fragment.app.Fragment;
+import androidx.viewpager2.adapter.FragmentStateAdapter;
+import androidx.viewpager2.widget.ViewPager2;
+
 import com.kobakei.ratethisapp.RateThisApp;
+import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.tabs.TabLayoutMediator;
 
 import io.oversec.one.*;
 import io.oversec.one.crypto.Help;
@@ -90,20 +92,9 @@ public class MainActivity extends AppCompatActivity {
         ctx.startActivity(i);
     }
 
-    /**
-     * The {@link androidx.viewpager.widget.PagerAdapter} that will provide
-     * fragments for each of the sections. We use a
-     * {@link FragmentPagerAdapter} derivative, which will keep every
-     * loaded fragment in memory. If this becomes too memory intensive, it
-     * may be best to switch to a
-     * {@link android.support.v4.app.FragmentStatePagerAdapter}.
-     */
     private SectionsPagerAdapter mSectionsPagerAdapter;
     private ArrayList<String> mTabs;
-    /**
-     * The {@link ViewPager} that will host the section contents.
-     */
-    private ViewPager mViewPager;
+    private ViewPager2 mViewPager;
     private HelpFragment mHelpFragment;
     private Fragment mAppsFragment;
     private KeysFragment mKeysFragment;
@@ -159,12 +150,16 @@ public class MainActivity extends AppCompatActivity {
 
         // Create the adapter that will return a fragment for each of the three
         // primary sections of the activity.
-        mSectionsPagerAdapter = new SectionsPagerAdapter(getFragmentManager());
+        mSectionsPagerAdapter = new SectionsPagerAdapter();
 
-        // Set up the ViewPager with the sections adapter.
-        mViewPager = (ViewPager) findViewById(R.id.pager);
+        mViewPager = (ViewPager2) findViewById(R.id.pager);
         mViewPager.setAdapter(mSectionsPagerAdapter);
-        mTabLayout.setupWithViewPager(mViewPager);
+        new TabLayoutMediator(mTabLayout, mViewPager, new TabLayoutMediator.TabConfigurationStrategy() {
+            @Override
+            public void onConfigureTab(@NonNull TabLayout.Tab tab, int position) {
+                tab.setText(mSectionsPagerAdapter.getPageTitle(position));
+            }
+        }).attach();
 
         checkIntent(getIntent());
 
@@ -204,42 +199,39 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * A {@link FragmentPagerAdapter} that returns a fragment corresponding to
-     * one of the sections/tabs/pages.
-     */
-    public class SectionsPagerAdapter extends FragmentPagerAdapter {
+    private Fragment getFragmentForTab(String tab) {
+        switch (tab) {
+            case TAB_APPS:
+                return mAppsFragment;
+            case TAB_HELP:
+                return mHelpFragment;
+            case TAB_KEYS:
+                return mKeysFragment;
+            case TAB_PADDER:
+                return mPadderFragment;
+            case TAB_SETTINGS:
+                return mSettingsFragment;
+        }
+        throw new IllegalArgumentException("Unsupported tab: " + tab);
+    }
 
-        public SectionsPagerAdapter(FragmentManager fm) {
-            super(fm);
+    public class SectionsPagerAdapter extends FragmentStateAdapter {
+
+        public SectionsPagerAdapter() {
+            super(MainActivity.this);
+        }
+
+        @NonNull
+        @Override
+        public Fragment createFragment(int position) {
+            return getFragmentForTab(mTabs.get(position));
         }
 
         @Override
-        public Fragment getItem(int position) {
-
-            String tab = mTabs.get(position);
-
-            switch (tab) {
-                case TAB_APPS:
-                    return mAppsFragment;
-                case TAB_HELP:
-                    return mHelpFragment;
-                case TAB_KEYS:
-                    return mKeysFragment;
-                case TAB_PADDER:
-                    return mPadderFragment;
-                case TAB_SETTINGS:
-                    return mSettingsFragment;
-            }
-            return null;
-        }
-
-        @Override
-        public int getCount() {
+        public int getItemCount() {
             return mTabs.size();
         }
 
-        @Override
         public CharSequence getPageTitle(int position) {
 
             String tab = mTabs.get(position);
@@ -256,8 +248,7 @@ public class MainActivity extends AppCompatActivity {
                 case TAB_SETTINGS:
                     return getString(R.string.main_tab_settings);
             }
-            return null;
-
+            throw new IllegalArgumentException("Unsupported tab: " + tab);
         }
     }
 
@@ -291,7 +282,7 @@ public class MainActivity extends AppCompatActivity {
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.help) {
-            Fragment f = mSectionsPagerAdapter.getItem(mTabLayout.getSelectedTabPosition());
+            Fragment f = getFragmentForTab(mTabs.get(mTabLayout.getSelectedTabPosition()));
             Help.ANCHOR a = null;
             if (f instanceof WithHelp) {
                 a = ((WithHelp) f).getHelpAnchor();

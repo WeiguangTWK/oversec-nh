@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -194,6 +195,10 @@ public class OversecAccessibilityService extends AccessibilityService implements
                     params.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_ENHANCED_WEB_ACCESSIBILITY;
                 }
 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                    params.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+                }
+
                 setServiceInfo(params);
             }
         }
@@ -293,7 +298,7 @@ public class OversecAccessibilityService extends AccessibilityService implements
     }
 
 
-    private Map<String, Boolean> mImePackageNameCache = Collections.synchronizedMap(new HashMap());
+    private Map<String, Boolean> mImePackageNameCache = Collections.synchronizedMap(new HashMap<String, Boolean>());
 
     private boolean
 
@@ -1015,6 +1020,174 @@ public class OversecAccessibilityService extends AccessibilityService implements
             action.performAction(focusedNode);
             focusedNode.recycle();
         }
+    }
+
+    public synchronized void performActionOnTargetNode(Core.FocusedNodeTarget target, PerformFocusedNodeAction action) {
+        if (target == null) {
+            performActionOnFocusedNode(action);
+            return;
+        }
+
+        AccessibilityNodeInfo matchedNode = findBestMatchingNode(target);
+        if (matchedNode == null) {
+            action.performActionWhenNothingFocused();
+            return;
+        }
+
+        try {
+            action.performAction(matchedNode);
+        } finally {
+            matchedNode.recycle();
+        }
+    }
+
+    private AccessibilityNodeInfo findBestMatchingNode(Core.FocusedNodeTarget target) {
+        AccessibilityNodeInfo focusedNode = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            focusedNode = findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+        }
+        if (focusedNode == null || !mTree.isAEditText(focusedNode)) {
+            if (focusedNode != null) {
+                focusedNode.recycle();
+            }
+            focusedNode = findFocus_PreLollipop();
+        }
+
+        if (focusedNode != null) {
+            int focusedScore = scoreNode(focusedNode, target);
+            if (focusedScore >= 100) {
+                return focusedNode;
+            }
+            focusedNode.recycle();
+        }
+
+        AccessibilityNodeInfo rootNode = null;
+        try {
+            rootNode = getRootInActiveWindow();
+            if (rootNode == null) {
+                return null;
+            }
+            NodeMatch bestMatch = new NodeMatch();
+            NodeMatch secondBestMatch = new NodeMatch();
+            findBestMatchingNodeRecursive(rootNode, target, bestMatch, secondBestMatch);
+            if (bestMatch.node == null || bestMatch.score < 60) {
+                if (bestMatch.node != null) {
+                    bestMatch.node.recycle();
+                }
+                if (secondBestMatch.node != null) {
+                    secondBestMatch.node.recycle();
+                }
+                return null;
+            }
+            if (secondBestMatch.node != null && secondBestMatch.score == bestMatch.score) {
+                bestMatch.node.recycle();
+                secondBestMatch.node.recycle();
+                return null;
+            }
+            if (secondBestMatch.node != null) {
+                secondBestMatch.node.recycle();
+            }
+            return bestMatch.node;
+        } finally {
+            if (rootNode != null) {
+                rootNode.recycle();
+            }
+        }
+    }
+
+    private void findBestMatchingNodeRecursive(AccessibilityNodeInfo node, Core.FocusedNodeTarget target, NodeMatch bestMatch, NodeMatch secondBestMatch) {
+        int score = scoreNode(node, target);
+        if (score > bestMatch.score) {
+            if (secondBestMatch.node != null) {
+                secondBestMatch.node.recycle();
+            }
+            secondBestMatch.node = bestMatch.node;
+            secondBestMatch.score = bestMatch.score;
+            bestMatch.node = AccessibilityNodeInfo.obtain(node);
+            bestMatch.score = score;
+        } else if (score > secondBestMatch.score) {
+            if (secondBestMatch.node != null) {
+                secondBestMatch.node.recycle();
+            }
+            secondBestMatch.node = AccessibilityNodeInfo.obtain(node);
+            secondBestMatch.score = score;
+        }
+
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child == null) {
+                continue;
+            }
+            try {
+                findBestMatchingNodeRecursive(child, target, bestMatch, secondBestMatch);
+            } finally {
+                child.recycle();
+            }
+        }
+    }
+
+    private int scoreNode(AccessibilityNodeInfo node, Core.FocusedNodeTarget target) {
+        if (node == null || target == null) {
+            return Integer.MIN_VALUE;
+        }
+        if (!TextUtils.equals(target.packageName, node.getPackageName())) {
+            return Integer.MIN_VALUE;
+        }
+        if (!TextUtils.equals(target.className, node.getClassName())) {
+            return Integer.MIN_VALUE;
+        }
+        if (target.editable && (!node.isEditable() || !node.isEnabled())) {
+            return Integer.MIN_VALUE;
+        }
+
+        int score = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && target.windowId == node.getWindowId()) {
+            score += 10;
+        }
+        if (target.editable == node.isEditable()) {
+            score += 15;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            CharSequence viewId = node.getViewIdResourceName();
+            if (target.viewIdResourceName != null) {
+                if (!TextUtils.equals(target.viewIdResourceName, viewId)) {
+                    return Integer.MIN_VALUE;
+                }
+                score += 80;
+            } else if (!TextUtils.isEmpty(viewId)) {
+                score += 5;
+            }
+        }
+
+        CharSequence text = AccessibilityNodeInfoUtils.getNodeText(node);
+        if (!TextUtils.isEmpty(target.textSnapshot)) {
+            if (TextUtils.equals(target.textSnapshot, text)) {
+                score += 40;
+            } else if (!TextUtils.isEmpty(text) && text.toString().contains(target.textSnapshot)) {
+                score += 15;
+            }
+        }
+
+        Rect targetBounds = target.getBounds();
+        Rect nodeBounds = new Rect();
+        node.getBoundsInScreen(nodeBounds);
+        if (nodeBounds.equals(targetBounds)) {
+            score += 40;
+        } else if (Rect.intersects(nodeBounds, targetBounds)) {
+            score += 20;
+        }
+
+        if (node.isFocused()) {
+            score += 30;
+        }
+
+        return score;
+    }
+
+    private static class NodeMatch {
+        AccessibilityNodeInfo node;
+        int score = Integer.MIN_VALUE;
     }
 
     public synchronized void performNodeAction(PerformNodeAction action) {

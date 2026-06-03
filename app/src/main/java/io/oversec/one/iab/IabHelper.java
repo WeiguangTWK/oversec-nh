@@ -589,7 +589,7 @@ public class IabHelper {
     public void queryInventoryAsync(final boolean querySkuDetails,
                                     final List<String> moreSkus,
                                     final QueryInventoryFinishedListener listener) {
-        final Handler handler = new Handler();
+        final Handler handler = new Handler(mContext.getMainLooper());
         checkNotDisposed();
         checkSetupDone("queryInventory");
         flagStartAsync("refresh inventory");
@@ -922,7 +922,7 @@ public class IabHelper {
     void consumeAsyncInternal(final List<Purchase> purchases,
                               final OnConsumeFinishedListener singleListener,
                               final OnConsumeMultiFinishedListener multiListener) {
-        final Handler handler = new Handler();
+        final Handler handler = new Handler(mContext.getMainLooper());
         flagStartAsync("consume");
         (new Thread(new Runnable() {
             public void run() {

@@ -9,11 +9,13 @@ import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.ShapeDrawable;
 import android.os.Build;
-import com.google.android.material.tabs.TabLayout;
-import androidx.viewpager.widget.PagerAdapter;
 import androidx.core.view.ViewCompat;
-import androidx.viewpager.widget.ViewPager;
 import androidx.core.widget.NestedScrollView;
+import androidx.fragment.app.FragmentActivity;
+import androidx.viewpager.widget.PagerAdapter;
+import androidx.viewpager.widget.ViewPager;
+
+import com.google.android.material.tabs.TabLayout;
 import android.util.AttributeSet;
 import android.view.ContextThemeWrapper;
 import android.view.View;
@@ -76,7 +78,7 @@ public class AppConfigView extends ViewPager {
             ViewCompat.setNestedScrollingEnabled(xlv, true);
         }
         {
-            MainSettingsFragment frag = (MainSettingsFragment) activity.getFragmentManager().findFragmentById(R.id.tweaks_tab__stuff);
+            MainSettingsFragment frag = (MainSettingsFragment) ((FragmentActivity) activity).getSupportFragmentManager().findFragmentById(R.id.tweaks_tab__stuff);
             frag.setPackageName(packageName);
         }
 

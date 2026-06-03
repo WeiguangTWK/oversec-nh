@@ -322,8 +322,8 @@ public class ImageDecryptActivity extends AppCompatActivity {
 
                 aFragment.setArgs(null);
 
-                android.app.FragmentManager manager = getFragmentManager();
-                android.app.FragmentTransaction transaction = manager.beginTransaction();
+                androidx.fragment.app.FragmentManager manager = getSupportFragmentManager();
+                androidx.fragment.app.FragmentTransaction transaction = manager.beginTransaction();
                 transaction.replace(io.oversec.one.crypto.R.id.encryptionInfoFragment_container, aFragment, "Foo");
 
                 transaction.commit();

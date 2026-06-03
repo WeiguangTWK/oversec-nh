@@ -2,25 +2,23 @@ package io.oversec.one.ui;
 
 import android.app.Activity;
 import android.app.ActivityOptions;
-
-import android.app.Fragment;
-import android.app.FragmentManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import com.google.android.material.tabs.TabLayout;
-import androidx.legacy.app.FragmentPagerAdapter;
-
-
-import androidx.viewpager.widget.ViewPager;
-import androidx.appcompat.app.AppCompatActivity;
-
-import androidx.appcompat.widget.Toolbar;
-
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.fragment.app.Fragment;
+import androidx.viewpager2.adapter.FragmentStateAdapter;
+import androidx.viewpager2.widget.ViewPager2;
+
+import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.tabs.TabLayoutMediator;
 
 
 import io.oversec.one.Core;
@@ -51,10 +49,10 @@ import io.oversec.one.crypto.ui.WithHelp;
 import io.oversec.one.ui.encparams.GpgEncryptionParamsFragment;
 import roboguice.util.Ln;
 
-public class EncryptionParamsActivity extends AppCompatActivity implements EncryptionParamsActivityContract, ViewPager.OnPageChangeListener {
+public class EncryptionParamsActivity extends AppCompatActivity implements EncryptionParamsActivityContract {
 
     private static final String EXTRA_IME_WAS_VISIBLE = "ime_was_visible";
-    private static final String EXTRA_EDIT_NODE_ID = "edit_node_id";
+    private static final String EXTRA_EDIT_TARGET = "edit_target";
     private static final String EXTRA_PACKAGENAME = "packagename";
     private static final String EXTRA_TAB = "EXTRA_TAB";
     private static final String EXTRA_STATE_GPG = "STATE_GPG";
@@ -70,21 +68,21 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
     private boolean mImeWasVisible;
 
     private String mPackagename;
-    private int mEditNodeId;
+    private Core.FocusedNodeTarget mEditTarget;
     private TabLayout mTitleIndicator;
     private TabAdapter mTabAdapter;
 
     private GpgEncryptionParamsFragment mGpgEncryptionParamsFragment;
     private SymmetricEncryptionParamsFragment mSymEncryptionParamsFragment;
     private SimpleSymmetricEncryptionParamsFragment mSimpleSymEncryptionParamsFragment;
-    private ViewPager mPager;
+    private ViewPager2 mPager;
 
 
-    public static void show(Context ctx, String packagename, final CharSequence editText, final int nodeId, final boolean imeWasVisible, View source) {
+    public static void show(Context ctx, String packagename, final CharSequence editText, final Core.FocusedNodeTarget target, final boolean imeWasVisible, View source) {
         Intent i = new Intent();
         i.setClass(ctx, EncryptionParamsActivity.class);
         i.putExtra(EXTRA_IME_WAS_VISIBLE, imeWasVisible);
-        i.putExtra(EXTRA_EDIT_NODE_ID, nodeId);
+        i.putExtra(EXTRA_EDIT_TARGET, target);
         i.putExtra(EXTRA_MODE, MODE_DEFAULT);
         i.putExtra(EXTRA_PACKAGENAME, packagename);
         i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -162,7 +160,7 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
 
 
         mImeWasVisible = getIntent().getBooleanExtra(EXTRA_IME_WAS_VISIBLE, false);
-        mEditNodeId = getIntent().getIntExtra(EXTRA_EDIT_NODE_ID, 0);
+        mEditTarget = (Core.FocusedNodeTarget) getIntent().getSerializableExtra(EXTRA_EDIT_TARGET);
         mPackagename = getIntent().getStringExtra(EXTRA_PACKAGENAME);
 
         String mode = getIntent().getStringExtra(EXTRA_MODE);
@@ -174,20 +172,27 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
             mSymEncryptionParamsFragment = SymmetricEncryptionParamsFragment.newInstance(mPackagename, isForTextEncryption, savedInstanceState == null ? null : savedInstanceState.getBundle(EXTRA_STATE_SYM));
         }
         mSimpleSymEncryptionParamsFragment = SimpleSymmetricEncryptionParamsFragment.newInstance(mPackagename, isForTextEncryption, savedInstanceState == null ? null : savedInstanceState.getBundle(EXTRA_STATE_SIMPLESYM));
-        mPager = (ViewPager) findViewById(R.id.pager);
-        mTabAdapter = new TabAdapter(getFragmentManager());
-        mPager.setOffscreenPageLimit(mTabAdapter.getCount());
+        mPager = (ViewPager2) findViewById(R.id.pager);
+        mTabAdapter = new TabAdapter();
+        mPager.setOffscreenPageLimit(mTabAdapter.getItemCount());
         mPager.setAdapter(mTabAdapter);
 
-
-        mPager.addOnPageChangeListener(this);
-
-
         mTitleIndicator = (TabLayout) findViewById(R.id.tabs);
-        mTitleIndicator.setupWithViewPager(mPager);
+        new TabLayoutMediator(mTitleIndicator, mPager, new TabLayoutMediator.TabConfigurationStrategy() {
+            @Override
+            public void onConfigureTab(@NonNull TabLayout.Tab tab, int position) {
+                tab.setText(mTabAdapter.getPageTitle(position));
+            }
+        }).attach();
 
+        mPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
+            @Override
+            public void onPageSelected(int position) {
+                invalidateOptionsMenu();
+            }
+        });
 
-        if (mTabAdapter.getCount() == 1) {
+        if (mTabAdapter.getItemCount() == 1) {
             mTitleIndicator.setVisibility(View.GONE);
             mSimpleSymEncryptionParamsFragment.setToolTipVisible(false);
         }
@@ -245,7 +250,7 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
             mGpgEncryptionParamsFragment.triggerSigningKeySelection(null);
             return true;
         } else if (id == R.id.help) {
-            Fragment f = mTabAdapter.getItem(mTitleIndicator.getSelectedTabPosition());
+            Fragment f = mTabAdapter.getFragmentForPosition(mTitleIndicator.getSelectedTabPosition());
             Help.ANCHOR a = null;
             if (f instanceof WithHelp) {
                 a = ((WithHelp) f).getHelpAnchor();
@@ -275,21 +280,6 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
     }
 
     @Override
-    public void onPageScrolled(int position, float positionOffset, int positionOffsetPixels) {
-
-    }
-
-    @Override
-    public void onPageSelected(int position) {
-        invalidateOptionsMenu();
-    }
-
-    @Override
-    public void onPageScrollStateChanged(int state) {
-    }
-
-
-    @Override
     public void finishWithResultOk() {
         setResult(RESULT_OK);
         finish();
@@ -305,8 +295,8 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
 
         mCore.getDb().setLastEncryptionMethod(mPackagename, encryptionParams.getEncryptionMethod());
 
-        if (mEditNodeId != 0) {
-            mCore.doEncryptAndSaveParams(encryptionParams, mEditNodeId, mImeWasVisible, addLink, mPackagename);
+        if (mEditTarget != null) {
+            mCore.doEncryptAndSaveParams(encryptionParams, mEditTarget, mImeWasVisible, addLink, mPackagename);
         } else {
             mCore.setLastSavedUserSelectedEncryptionParams(encryptionParams, mPackagename);
         }
@@ -359,14 +349,13 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
     }
 
 
-    class TabAdapter extends FragmentPagerAdapter {
+    class TabAdapter extends FragmentStateAdapter {
 
-        public TabAdapter(FragmentManager fm) {
-            super(fm);
+        public TabAdapter() {
+            super(EncryptionParamsActivity.this);
         }
 
-        @Override
-        public Fragment getItem(int position) {
+        private AbstractEncryptionParamsFragment getFragmentForPosition(int position) {
             AbstractEncryptionParamsFragment frag0 = null;
             AbstractEncryptionParamsFragment frag1 = null;
             AbstractEncryptionParamsFragment frag2 = null;
@@ -431,46 +420,37 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
                     return frag2;
             }
 
-            return null;
+            throw new IllegalArgumentException("Unsupported page index: " + position);
         }
 
+        @NonNull
+        @Override
+        public Fragment createFragment(int position) {
+            return getFragmentForPosition(position);
+        }
 
         @Override
-        public int getCount() {
+        public int getItemCount() {
             return 1 + //always have simple password
                     (Util.isFeatureEnctypePGP(EncryptionParamsActivity.this) ? 1 : 0) +
                     (Util.isFeatureEnctypeSYM(EncryptionParamsActivity.this) ? 1 : 0);
 
         }
 
-        @Override
         public CharSequence getPageTitle(int position) {
-            AbstractEncryptionParamsFragment f = (AbstractEncryptionParamsFragment) getItem(position);
+            AbstractEncryptionParamsFragment f = getFragmentForPosition(position);
             return f.getTabTitle(EncryptionParamsActivity.this);
         }
 
-        @Override
-        public void destroyItem(ViewGroup container, int position, Object object) {
-            //nothing
-        }
-
         public int getPageByMethod(EncryptionMethod method) {
-            for (int i = 0; i < getCount(); i++) {
-                AbstractEncryptionParamsFragment f = (AbstractEncryptionParamsFragment) getItem(i);
+            for (int i = 0; i < getItemCount(); i++) {
+                AbstractEncryptionParamsFragment f = getFragmentForPosition(i);
                 if (f.getMethod() == method) {
                     return i;
                 }
             }
             return -1;
         }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        //GPG fragment depends on "startIntentSenderForResult" which can not be called directly from fragment
-        //this it's called on this activity thus we need to forward the result
-        mGpgEncryptionParamsFragment.onActivityResult(requestCode, resultCode, data);
-
     }
 
     @Override
@@ -504,5 +484,3 @@ public class EncryptionParamsActivity extends AppCompatActivity implements Encry
         //NOT - maybe  lead to foxus problems in base app!   ImeMemoryLeakWorkaroundDummyActivity.maybeShow(this);
     }
 }
-
-

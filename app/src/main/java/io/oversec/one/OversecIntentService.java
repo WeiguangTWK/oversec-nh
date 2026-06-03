@@ -1,12 +1,13 @@
 package io.oversec.one;
 
-import android.app.IntentService;
 import android.app.Notification;
 import android.app.PendingIntent;
+import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.IBinder;
 import android.provider.Settings;
 import androidx.core.app.NotificationCompat;
 
@@ -18,7 +19,10 @@ import io.oversec.one.ui.AppConfigActivity;
 import io.oversec.one.ui.OnboardingActivity;
 import roboguice.util.Ln;
 
-public class OversecIntentService extends IntentService {
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+public class OversecIntentService extends Service {
 
     private static final String ACTION_TEMP_HIDE = "ACTION_TEMP_HIDE";
     private static final String ACTION_TEMP_SHOW = "ACTION_TEMP_SHOW";
@@ -30,12 +34,37 @@ public class OversecIntentService extends IntentService {
 
     private static final String EXTRA_PACKAGE_NAME = "EXTRA_PACKAGE_NAME";
 
-    public OversecIntentService() {
-        super("oversec_intent_service");
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+    @Override
+    public int onStartCommand(final Intent intent, int flags, final int startId) {
+        if (intent == null) {
+            stopSelfResult(startId);
+            return START_NOT_STICKY;
+        }
+
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                handleIntent(intent);
+                stopSelfResult(startId);
+            }
+        });
+        return START_NOT_STICKY;
     }
 
     @Override
-    protected void onHandleIntent(Intent intent) {
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public void onDestroy() {
+        executor.shutdown();
+        super.onDestroy();
+    }
+
+    private void handleIntent(Intent intent) {
         String action = intent.getAction();
         if (ACTION_TEMP_HIDE.equals(action)) {
             Core.getInstance(this).doTemporaryHide(intent.getStringExtra(EXTRA_PACKAGE_NAME), Boolean.TRUE);
@@ -82,34 +111,34 @@ public class OversecIntentService extends IntentService {
         mainIntent.putExtra(EXTRA_PACKAGE_NAME, packagename);
 
         PendingIntent pendingMainIntent = PendingIntent.getService(ctx, 0,
-                mainIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                mainIntent, pendingIntentFlags());
 
         Intent tempHideIntent = new Intent(ctx, OversecIntentService.class);
         tempHideIntent.setAction(ACTION_TEMP_HIDE);
         tempHideIntent.putExtra(EXTRA_PACKAGE_NAME, packagename);
         PendingIntent pendingTempHideIntent = PendingIntent.getService(ctx, 0,
-                tempHideIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                tempHideIntent, pendingIntentFlags());
 
         Intent tempShowIntent = new Intent(ctx, OversecIntentService.class);
         tempShowIntent.setAction(ACTION_TEMP_SHOW);
         tempShowIntent.putExtra(EXTRA_PACKAGE_NAME, packagename);
         PendingIntent pendingTempShowIntent = PendingIntent.getService(ctx, 0,
-                tempShowIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                tempShowIntent, pendingIntentFlags());
 
         Intent infoOnIntent = new Intent(ctx, OversecIntentService.class);
         infoOnIntent.setAction(ACTION_INFO_ON);
         PendingIntent pendingInfoOnIntent = PendingIntent.getService(ctx, 0,
-                infoOnIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                infoOnIntent, pendingIntentFlags());
 
         Intent infoOffIntent = new Intent(ctx, OversecIntentService.class);
         infoOffIntent.setAction(ACTION_INFO_OFF);
         PendingIntent pendingInfoOffIntent = PendingIntent.getService(ctx, 0,
-                infoOffIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                infoOffIntent, pendingIntentFlags());
 
         Intent stopIntent = new Intent(ctx, OversecIntentService.class);
         stopIntent.setAction(ACTION_STOPBOSS);
         PendingIntent pendingStopIntent = PendingIntent.getService(ctx, 0,
-                stopIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                stopIntent, pendingIntentFlags());
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
                 ctx)
@@ -154,7 +183,7 @@ public class OversecIntentService extends IntentService {
         Intent mainIntent = new Intent(ctx, OversecIntentService.class);
         mainIntent.setAction(ACTION_SHOW_ACCESSIBILITY_SETTINGS);
         PendingIntent pendingMainIntent = PendingIntent.getService(ctx, 0,
-                mainIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                mainIntent, pendingIntentFlags());
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
                 ctx)
@@ -169,5 +198,13 @@ public class OversecIntentService extends IntentService {
             n.visibility = Notification.VISIBILITY_SECRET;
         }
         return n;
+    }
+
+    private static int pendingIntentFlags() {
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return flags;
     }
 }

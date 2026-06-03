@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.PorterDuff;
 import android.os.Bundle;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.widget.AppCompatCheckBox;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -40,7 +42,6 @@ import roboguice.util.Ln;
 import java.util.*;
 
 public class SimpleSymmetricEncryptionParamsFragment extends AbstractEncryptionParamsFragment implements OversecKeyCacheListener {
-    private static final int RQ_ADD_ENCRYPTION_PASSWORD = 8000;
     private static final int RQ_UPGRADE = 8010;
 
     private static final String EXTRA_SELECTED_KEY_IDS = "EXTRA_SELECTED_KEY_IDS";
@@ -55,9 +56,10 @@ public class SimpleSymmetricEncryptionParamsFragment extends AbstractEncryptionP
     private ImageButton mBtnSimpleSymParamsEnterPassword;
     private KeyCache mKeyCache;
     private SimpleSymmetricEncryptionParams mParams;
-
-    private ActivityResultWrapper mTempActivityResult;
     private CheckBox mCbAddLink;
+    private final ActivityResultLauncher<Intent> mAddPasswordLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result ->
+                    handleAddPasswordResult(result.getResultCode(), result.getData()));
 
     public static SimpleSymmetricEncryptionParamsFragment newInstance(String packagename, boolean isForTextEncryption, Bundle state) {
         SimpleSymmetricEncryptionParamsFragment fragment = new SimpleSymmetricEncryptionParamsFragment();
@@ -149,9 +151,6 @@ public class SimpleSymmetricEncryptionParamsFragment extends AbstractEncryptionP
 
         mKeyCache.addKeyCacheListener(this);
 
-
-        handleActivityResult();
-
         return getMView();
     }
 
@@ -178,7 +177,7 @@ public class SimpleSymmetricEncryptionParamsFragment extends AbstractEncryptionP
     }
 
     private static void showAddPasswordKeyActivity(SimpleSymmetricEncryptionParamsFragment frag) {
-        AddPasswordKeyActivity.Companion.showForResult(frag, RQ_ADD_ENCRYPTION_PASSWORD);
+        frag.mAddPasswordLauncher.launch(AddPasswordKeyActivity.Companion.buildIntent(frag.requireContext(), false));
     }
 
     private void updateList(List<Long> selectedKeyIds, boolean reorderSelectedToFront) {
@@ -187,44 +186,19 @@ public class SimpleSymmetricEncryptionParamsFragment extends AbstractEncryptionP
         mRvPasswords.setAdapter(mKeysAdapter);
     }
 
-    private void handleActivityResult() {
-        if (mTempActivityResult != null) {
-            int requestCode = mTempActivityResult.getRequestCode();
-            int resultCode = mTempActivityResult.getResultCode();
-            Intent data = mTempActivityResult.getData();
-            mTempActivityResult = null;
-
-            if (requestCode == RQ_ADD_ENCRYPTION_PASSWORD) {
-                if (resultCode == Activity.RESULT_OK) {
-                    List<Long> ss = mKeysAdapter.getSelectedKeyIds();
-                    if (data != null) {
-                        long keyId = data.getLongExtra(AddPasswordKeyActivity.EXTRA_RESULT_KEY_ID, 0);
-                        ss.add(keyId);
-                    }
-
-                    updateList(ss, false);
-                }
-
+    private void handleAddPasswordResult(int resultCode, Intent data) {
+        if (resultCode == Activity.RESULT_OK) {
+            List<Long> ss = mKeysAdapter.getSelectedKeyIds();
+            if (data != null) {
+                long keyId = data.getLongExtra(AddPasswordKeyActivity.EXTRA_RESULT_KEY_ID, 0);
+                ss.add(keyId);
             }
+
+            updateList(ss, false);
         }
 
         View tooltip = getMView().findViewById(R.id.simpleSymParamsGotItAppSec);
         tooltip.setVisibility(mKeysAdapter.getItemCount() == 0 ? View.VISIBLE : View.GONE);
-    }
-
-
-    @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        mTempActivityResult = new ActivityResultWrapper(requestCode, resultCode, data);
-
-        //DAMNIT the liefecycle is indeed different whether activity os destroyed andrecreated or just stays around!
-        if (getMView() != null) {
-            handleActivityResult();
-        } else {
-            //will be handled in onCreateView
-        }
-
-
     }
 
     @Override

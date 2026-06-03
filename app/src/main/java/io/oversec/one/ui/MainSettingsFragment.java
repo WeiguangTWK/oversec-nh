@@ -5,8 +5,16 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.preference.*;
+import android.text.InputType;
+import android.widget.EditText;
+
 import androidx.annotation.NonNull;
+import androidx.preference.CheckBoxPreference;
+import androidx.preference.EditTextPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceManager;
+import androidx.preference.PreferenceScreen;
 
 import com.afollestad.materialdialogs.DialogAction;
 import com.afollestad.materialdialogs.MaterialDialog;
@@ -19,87 +27,101 @@ import io.oversec.one.crypto.Help;
 import io.oversec.one.crypto.ui.WithHelp;
 import io.oversec.one.db.Db;
 
-public class MainSettingsFragment extends PreferenceFragment implements WithHelp, SharedPreferences.OnSharedPreferenceChangeListener {
+public class MainSettingsFragment extends PreferenceFragmentCompat implements WithHelp, SharedPreferences.OnSharedPreferenceChangeListener {
     public static final int MIN_SECRETCODE_LENGTH = 4;
     public static final String EXTRA_MAIN = "main";
     private String mPackageName;
 
     @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
+    public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
         PreferenceManager manager = getPreferenceManager();
         manager.setSharedPreferencesName(MainPreferences.INSTANCE.getFILENAME());
+        setPreferenceScreen(manager.createPreferenceScreen(requireContext()));
+        build();
     }
 
     private void build() {
         PreferenceScreen ps = getPreferenceScreen();
         if (ps != null) {
             ps.removeAll();
-            ;
         }
-        addPreferencesFromResource(R.xml.empty_preferences);
-
-        Activity ctx = getActivity();
+        Activity ctx = requireActivity();
 
         Bundle args = getArguments();
         if (args != null && args.getBoolean(EXTRA_MAIN)) {
-            //Fragment used in MainActivity
-
-
             if (Util.isOversec(ctx)) {
-                //Oversec: show prefs only
                 addPreferencesFromResource(R.xml.main_preferences);
             } else {
-                //Appsec: show prefs and per-app-stuff
-
                 mPackageName = (getResources().getString(R.string.feature_package));
                 addPreferencesFromResource(R.xml.main_preferences);
                 addDbPrefs();
-
             }
-
         } else {
-            //fragment used in app config
             if (Util.isOversec(ctx)) {
-                //Oversec: show per-app-stuff only
                 addDbPrefs();
-
             } else {
-                //Appsec: show prefs and per-app-stuff
                 addPreferencesFromResource(R.xml.main_preferences);
                 addDbPrefs();
-
             }
         }
 
-        if (!Util.hasDialerIntentHandler(getActivity())) {
-            Preference p = getPreferenceScreen().findPreference(getString(R.string.mainprefs_hidelauncheronpanic_key));
+        if (!Util.hasDialerIntentHandler(requireActivity())) {
+            Preference p = findPreference(getString(R.string.mainprefs_hidelauncheronpanic_key));
             if (p != null) {
                 getPreferenceScreen().removePreference(p);
             }
-            Preference p2 = getPreferenceScreen().findPreference(getString(R.string.mainprefs_launchersecretcode_key));
+            Preference p2 = findPreference(getString(R.string.mainprefs_launchersecretcode_key));
             if (p2 != null) {
                 getPreferenceScreen().removePreference(p2);
             }
         }
 
         if (!getResources().getBoolean(R.bool.feature_expert_options)) {
-            Preference p3 = getPreferenceScreen().findPreference(getString(R.string.mainprefs_relaxecache_key));
+            Preference p3 = findPreference(getString(R.string.mainprefs_relaxecache_key));
             if (p3 != null) {
-                getPreferenceScreen().removePreference(
-                        p3);
+                getPreferenceScreen().removePreference(p3);
             }
         }
+
+        configureSecretCodePreference();
+    }
+
+    private void configureSecretCodePreference() {
+        DialercodeEditTextPreference pref = findPreference(getString(R.string.mainprefs_launchersecretcode_key));
+        if (pref == null) {
+            return;
+        }
+        pref.setOnBindEditTextListener(new EditTextPreference.OnBindEditTextListener() {
+            @Override
+            public void onBindEditText(@NonNull EditText editText) {
+                editText.setInputType(InputType.TYPE_CLASS_NUMBER);
+                editText.setSelectAllOnFocus(true);
+            }
+        });
+        pref.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+            @Override
+            public boolean onPreferenceChange(Preference preference, Object newValue) {
+                String value = String.valueOf(newValue).trim();
+                if (value.length() < MIN_SECRETCODE_LENGTH) {
+                    new MaterialDialog.Builder(requireActivity())
+                            .title(R.string.mainprefs_launchersecretcode_title)
+                            .iconRes(io.oversec.one.crypto.R.drawable.ic_vpn_key_black_24dp)
+                            .cancelable(true)
+                            .content(getString(R.string.secretdialer_code_too_short, "" + MIN_SECRETCODE_LENGTH))
+                            .neutralText(io.oversec.one.crypto.R.string.common_ok)
+                            .show();
+                    return false;
+                }
+                return true;
+            }
+        });
     }
 
     private void addDbPrefs() {
-        final Db db = Core.getInstance(getActivity()).getDb();
-        Context ctx = getActivity();
+        final Db db = Core.getInstance(requireActivity()).getDb();
+        Context ctx = requireActivity();
 
         if (Util.isOversec(ctx)) {
-
-
             getPreferenceScreen().addPreference(new DbCheckBoxPreference(ctx,
                     ctx.getString(R.string.controls_checkbox_enable),
                     ctx.getString(R.string.controls_checkbox_enable_sub, Util.getPackageLabel(ctx, mPackageName))) {
@@ -247,13 +269,13 @@ public class MainSettingsFragment extends PreferenceFragment implements WithHelp
     }
 
     private void check(String key) {
-        if (MainPreferences.INSTANCE.isHideLauncherOnPanic(getActivity())) {
-            if (!MainPreferences.INSTANCE.isDialerSecretCodeBroadcastConfirmedWorking(getActivity())) {
+        if (MainPreferences.INSTANCE.isHideLauncherOnPanic(requireActivity())) {
+            if (!MainPreferences.INSTANCE.isDialerSecretCodeBroadcastConfirmedWorking(requireActivity())) {
 
                 CheckBoxPreference cb = (CheckBoxPreference)
-                        getPreferenceScreen().findPreference(getString(R.string.mainprefs_hidelauncheronpanic_key));
+                        findPreference(getString(R.string.mainprefs_hidelauncheronpanic_key));
                 cb.setChecked(false);
-                new MaterialDialog.Builder(getActivity())
+                new MaterialDialog.Builder(requireActivity())
                         .title(R.string.mainprefs_hidelauncheronpanic_title)
                         .iconRes(io.oversec.one.crypto.R.drawable.ic_vpn_key_black_24dp)
                         .cancelable(true)
@@ -266,21 +288,20 @@ public class MainSettingsFragment extends PreferenceFragment implements WithHelp
         }
 
         if ((key.equals(getString(R.string.mainprefs_hidelauncheronpanic_key))
-                && MainPreferences.INSTANCE.isHideLauncherOnPanic(getActivity())
+                && MainPreferences.INSTANCE.isHideLauncherOnPanic(requireActivity())
 
         )
                 ||
                 (key.equals(getString(R.string.mainprefs_screenoffpanic_key))
-                        && MainPreferences.INSTANCE.isPanicOnScreenOff(getActivity())
+                        && MainPreferences.INSTANCE.isPanicOnScreenOff(requireActivity())
                 )
                 ) {
-            String code = MainPreferences.INSTANCE.getLauncherSecretDialerCode(getActivity());
+            String code = MainPreferences.INSTANCE.getLauncherSecretDialerCode(requireActivity());
             if (code.length() == 0) {
-                //create an initial launcher code
                 code = String.valueOf(Math.random() * 100000).substring(0, 5);
-                MainPreferences.INSTANCE.setLauncherSecretDialerCode(getActivity(), code);
+                MainPreferences.INSTANCE.setLauncherSecretDialerCode(requireActivity(), code);
             }
-            if (Util.hasDialerIntentHandler(getActivity())) {
+            if (Util.hasDialerIntentHandler(requireActivity())) {
                 showCurrentLauncherCode();
             }
         }
@@ -289,19 +310,19 @@ public class MainSettingsFragment extends PreferenceFragment implements WithHelp
     }
 
     private void showCurrentLauncherCode() {
-        String code = MainPreferences.INSTANCE.getLauncherSecretDialerCode(getActivity());
-        String msg = getActivity().getString(R.string.secretdialer_code, code);
+        String code = MainPreferences.INSTANCE.getLauncherSecretDialerCode(requireActivity());
+        String msg = requireActivity().getString(R.string.secretdialer_code, code);
 
 
-        if (!MainPreferences.INSTANCE.isDialerSecretCodeBroadcastConfirmedWorking(getActivity())) {
-            msg = msg + "\n\n" + getActivity().getString(R.string.secretdialer_code_initial_confirm);
+        if (!MainPreferences.INSTANCE.isDialerSecretCodeBroadcastConfirmedWorking(requireActivity())) {
+            msg = msg + "\n\n" + requireActivity().getString(R.string.secretdialer_code_initial_confirm);
 
             if (android.os.Build.MANUFACTURER.toLowerCase().contains("samsung")) {
-                msg = msg + "\n\n" + getActivity().getString(R.string.secretdialer_code_initial_confirm_samsung);
+                msg = msg + "\n\n" + requireActivity().getString(R.string.secretdialer_code_initial_confirm_samsung);
             }
 
 
-            new MaterialDialog.Builder(getActivity())
+            new MaterialDialog.Builder(requireActivity())
                     .title(R.string.mainprefs_launchersecretcode_title)
                     .iconRes(io.oversec.one.crypto.R.drawable.ic_vpn_key_black_24dp)
                     .cancelable(true)
@@ -324,7 +345,7 @@ public class MainSettingsFragment extends PreferenceFragment implements WithHelp
                     .show();
 
         } else {
-            new MaterialDialog.Builder(getActivity())
+            new MaterialDialog.Builder(requireActivity())
                     .title(R.string.mainprefs_launchersecretcode_title)
                     .iconRes(io.oversec.one.crypto.R.drawable.ic_vpn_key_black_24dp)
                     .cancelable(true)

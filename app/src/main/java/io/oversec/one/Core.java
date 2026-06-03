@@ -2,17 +2,20 @@ package io.oversec.one;
 
 
 import android.app.Activity;
-import android.app.Fragment;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.*;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.*;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
+
+import androidx.fragment.app.Fragment;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 
@@ -41,6 +44,7 @@ import io.oversec.one.ovl.OverlayDialogToast;
 import io.oversec.one.ui.*;
 import roboguice.util.Ln;
 
+import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
 import java.util.*;
 
@@ -138,6 +142,47 @@ public class Core extends CoreContract implements Handler.Callback {
     private boolean mUserInteractionDialogConfirmed = false;
     private boolean mScreenOn = true;
     private boolean mAcsCheckerIntervalFast = false;
+
+    public static class FocusedNodeTarget implements Serializable {
+        private static final long serialVersionUID = 1L;
+
+        public final String packageName;
+        public final String className;
+        public final String viewIdResourceName;
+        public final String textSnapshot;
+        public final int windowId;
+        public final boolean editable;
+        public final int boundsLeft;
+        public final int boundsTop;
+        public final int boundsRight;
+        public final int boundsBottom;
+
+        private FocusedNodeTarget(AccessibilityNodeInfo node) {
+            packageName = node.getPackageName() == null ? null : node.getPackageName().toString();
+            className = node.getClassName() == null ? null : node.getClassName().toString();
+            viewIdResourceName = Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2
+                    ? node.getViewIdResourceName() : null;
+            CharSequence text = AccessibilityNodeInfoUtils.getNodeText(node);
+            textSnapshot = text == null ? null : text.toString();
+            windowId = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP ? node.getWindowId() : -1;
+            editable = node.isEditable();
+
+            Rect bounds = new Rect();
+            node.getBoundsInScreen(bounds);
+            boundsLeft = bounds.left;
+            boundsTop = bounds.top;
+            boundsRight = bounds.right;
+            boundsBottom = bounds.bottom;
+        }
+
+        public Rect getBounds() {
+            return new Rect(boundsLeft, boundsTop, boundsRight, boundsBottom);
+        }
+
+        public boolean matchesPackage(String packageName) {
+            return TextUtils.equals(this.packageName, packageName);
+        }
+    }
 
 
     //TODO. refactor
@@ -290,11 +335,13 @@ public class Core extends CoreContract implements Handler.Callback {
     }
 
     public void onButtonEncryptLongTap() {
-        mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_LONG_TAP_BTENCRYPT, mOversecAccessibilityService.isImeVisible()));
+        OversecAccessibilityService acs = mOversecAccessibilityService;
+        mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_LONG_TAP_BTENCRYPT, acs != null && acs.isImeVisible()));
     }
 
     public void onButtonEncryptDoubleTap() {
-        mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_DOUBLE_TAP_BTENCRYPT, mOversecAccessibilityService.isImeVisible()));
+        OversecAccessibilityService acs = mOversecAccessibilityService;
+        mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_DOUBLE_TAP_BTENCRYPT, acs != null && acs.isImeVisible()));
     }
 
     public void onButtonDecryptSingleTap() {
@@ -598,7 +645,7 @@ public class Core extends CoreContract implements Handler.Callback {
                 @Override
                 public void performAction(final AccessibilityNodeInfo node) {
                     removeOverlayDecrypt_UI(false);
-                    EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), getNodeText(node), node.hashCode(), imeWasVisible, view);
+                    EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), getNodeText(node), captureNodeTarget(node), imeWasVisible, view);
                 }
 
                 @Override
@@ -647,15 +694,15 @@ public class Core extends CoreContract implements Handler.Callback {
                                 || !ep.isStillValid(mCtx)
                                 || mDb.isForceEncryptionParams(mUiThreadVars.getCurrentPackageName())) {
                             mOverlays.removeDecrypt(); //optimization, don't need to wait for the ACS event
-                            EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), getNodeText(node), node.hashCode(), aSkbWasUp, view);
+                            EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), getNodeText(node), captureNodeTarget(node), aSkbWasUp, view);
                         } else {
-                            doEncrypt_UI(ep, node.hashCode(), aSkbWasUp, 0, false, false, null, mUiThreadVars.getCurrentPackageName());
+                            doEncrypt_UI(ep, captureNodeTarget(node), aSkbWasUp, 0, false, false, null, mUiThreadVars.getCurrentPackageName());
                         }
                     }
                 } catch (UserInteractionRequiredException e) {
                     Ln.d(" doEncrypt_UI...performSingleTapBtEncrypt_UI...  ....UserInteractionRequiredException");
                     mOverlays.removeDecrypt(); //optimization, don't need to wait for the ACS event
-                    EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), getNodeText(node), node.hashCode(), aSkbWasUp, view);
+                    EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), getNodeText(node), captureNodeTarget(node), aSkbWasUp, view);
                 }
 
 
@@ -707,17 +754,17 @@ public class Core extends CoreContract implements Handler.Callback {
                                 }
 
                             }
-                            setText_UI(node.hashCode(), text, aSkbWasUp, 0);
+                            setText_UI(captureNodeTarget(node), text, aSkbWasUp, 0);
                         } else {
                             if (targetText.length() > 0) {
                                 //backspace
-                                setText_UI(node.hashCode(), "", aSkbWasUp, 0);
+                                setText_UI(captureNodeTarget(node), "", aSkbWasUp, 0);
                             }
                         }
                     } catch (UserInteractionRequiredException e) {
                         Ln.d(" doEncrypt_UI...performSingleTapBtDecrypt_UI...  ....UserInteractionRequiredException");
                         //EncryptionParamsActivity.show(mCtx, mUiThreadVars.getCurrentPackageName(), node.getText(), node.hashCode(), aSkbWasUp);
-                        setText_UI(node.hashCode(), "", aSkbWasUp, 0);
+                        setText_UI(captureNodeTarget(node), "", aSkbWasUp, 0);
                     }
                 }
 
@@ -886,7 +933,7 @@ public class Core extends CoreContract implements Handler.Callback {
             aOversecAccessibilityService.performActionOnFocusedNode(new OversecAccessibilityService.PerformFocusedNodeAction() {
                 @Override
                 public void performAction(AccessibilityNodeInfo node) {
-                    setText_UI(node.hashCode(), "", mOversecAccessibilityService.isImeVisible(), 1);
+                    setText_UI(captureNodeTarget(node), "", mOversecAccessibilityService.isImeVisible(), 1);
                 }
 
                 @Override
@@ -1173,7 +1220,7 @@ public class Core extends CoreContract implements Handler.Callback {
 
                                     }
                                     // current editor content seems to be encrypted
-                                    setText_UI(node.hashCode(), text, bringUpSkb, 0);
+                                    setText_UI(captureNodeTarget(node), text, bringUpSkb, 0);
 
                                 }
 
@@ -1223,26 +1270,26 @@ public class Core extends CoreContract implements Handler.Callback {
         }
     }
 
-    public void doEncryptAndSaveParams(AbstractEncryptionParams encryptionParams, int nodeId, boolean skbWasVisible, boolean addLink, String packagename) {
-        doEncrypt(encryptionParams, nodeId, null, skbWasVisible, 0, true, addLink, null, packagename);
+    public void doEncryptAndSaveParams(AbstractEncryptionParams encryptionParams, FocusedNodeTarget target, boolean skbWasVisible, boolean addLink, String packagename) {
+        doEncrypt(encryptionParams, target, null, skbWasVisible, 0, true, addLink, null, packagename);
     }
 
-    public void doEncrypt(AbstractEncryptionParams params, final int nodeId, final Intent actionIntent, boolean skbWasVisible, int retryCount, boolean saveParams, boolean addLink, byte[] innerPadding, String packagename) {
+    public void doEncrypt(AbstractEncryptionParams params, final FocusedNodeTarget target, final Intent actionIntent, boolean skbWasVisible, int retryCount, boolean saveParams, boolean addLink, byte[] innerPadding, String packagename) {
         mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_DO_ENCRYPT, new DoEncryptParams(
-                params, nodeId, actionIntent, skbWasVisible, retryCount, saveParams, addLink, innerPadding, packagename)));
+                params, target, actionIntent, skbWasVisible, retryCount, saveParams, addLink, innerPadding, packagename)));
     }
 
-    private void doEncrypt_UI(AbstractEncryptionParams params, final int nodeId, boolean skbWasVisible, int repeatCount, boolean saveParams, boolean addLink, byte[] innerPadding, String packagename) {
+    private void doEncrypt_UI(AbstractEncryptionParams params, final FocusedNodeTarget target, boolean skbWasVisible, int repeatCount, boolean saveParams, boolean addLink, byte[] innerPadding, String packagename) {
         checkUiThread();
 
-        doEncrypt_UI(params, nodeId, null, skbWasVisible, repeatCount, saveParams, addLink, innerPadding, packagename);
+        doEncrypt_UI(params, target, null, skbWasVisible, repeatCount, saveParams, addLink, innerPadding, packagename);
     }
 
     private class DoEncryptParams {
         private final AbstractEncryptionParams params;
         private final boolean saveParams;
         private final byte[] innerPadding;
-        public int nodeId;
+        public FocusedNodeTarget target;
         public Intent actionIntent;
         public boolean skbwAsVisible;
         public int retryCount;
@@ -1250,7 +1297,7 @@ public class Core extends CoreContract implements Handler.Callback {
         public String packagename;
 
         public DoEncryptParams(AbstractEncryptionParams params,
-                               int nodeId,
+                               FocusedNodeTarget target,
                                Intent actionIntent,
                                boolean skbWasVisible,
                                int retryCount,
@@ -1259,7 +1306,7 @@ public class Core extends CoreContract implements Handler.Callback {
                                byte[] innerPadding,
                                String packagename) {
             this.params = params;
-            this.nodeId = nodeId;
+            this.target = target;
             this.actionIntent = actionIntent;
             this.skbwAsVisible = skbWasVisible;
             this.retryCount = retryCount;
@@ -1273,11 +1320,11 @@ public class Core extends CoreContract implements Handler.Callback {
     }
 
     private void doEncrypt_UI(DoEncryptParams p) {
-        doEncrypt_UI(p.params, p.nodeId, p.actionIntent, p.skbwAsVisible, p.retryCount, p.saveParams, p.addLink, p.innerPadding, p.packagename);
+        doEncrypt_UI(p.params, p.target, p.actionIntent, p.skbwAsVisible, p.retryCount, p.saveParams, p.addLink, p.innerPadding, p.packagename);
     }
 
     private void doEncrypt_UI(final AbstractEncryptionParams params,
-                              final int nodeId,
+                              final FocusedNodeTarget target,
                               final Intent actionIntent,
                               final boolean skbWasVisible,
                               final int retryCount,
@@ -1287,7 +1334,7 @@ public class Core extends CoreContract implements Handler.Callback {
                               final String packagename) {
         checkUiThread();
 
-        Ln.d("OOO: doEncryptUI nodeId=%s retryCount=%s ", nodeId, retryCount);
+        Ln.d("OOO: doEncryptUI target=%s retryCount=%s ", target, retryCount);
         byte[] aPadding = null;
         if (padding == null) {
 
@@ -1303,62 +1350,10 @@ public class Core extends CoreContract implements Handler.Callback {
         final byte[] innerPadding = aPadding;
         OversecAccessibilityService aOversecAccessibilityService = mOversecAccessibilityService;
         if (aOversecAccessibilityService != null) {
-            aOversecAccessibilityService.performActionOnFocusedNode(new OversecAccessibilityService.PerformFocusedNodeAction() {
+            aOversecAccessibilityService.performActionOnTargetNode(target, new OversecAccessibilityService.PerformFocusedNodeAction() {
                 @Override
                 public void performAction(AccessibilityNodeInfo node) {
-                    int realNodeId = nodeId;
-
                     Ln.d("OOO: performAction");
-
-                    //AAARGH, this will fail if the underlying activity has been destroyed in the meantime
-                    //i.e. when developer options  "don't keep activities" is on!
-                    //TODO: do we really need this check???
-                    if (nodeId != node.hashCode()) {
-                        Ln.w("OOO: Focused node %s is not the one we expected!", node.hashCode());
-
-                        if (retryCount == CLICK_NODE_WHEN_NODE_NOT_FOUND_REPEAT_COUNT) {
-                            //try to click it
-                            Ln.w("OOO: CLICKING IT");
-                            clickNodeById(nodeId);
-
-
-                        }
-
-                        if (retryCount < MAX_REPEAT_WHILE_NODE_NOT_FOUND) {
-
-                            mOversecAccessibilityService.performNodeAction(new OversecAccessibilityService.PerformNodeAction() {
-
-                                boolean found = false;
-
-                                @Override
-                                public void onNodeScanned(AccessibilityNodeInfo node) {
-
-                                    if (node.isFocused() && node.hashCode() == nodeId) {
-                                        found = true;
-                                        doEncrypt(params, nodeId, actionIntent, skbWasVisible, retryCount + 1, saveParams, addLink, padding, packagename);
-                                    }
-                                }
-
-                                @Override
-                                public void onScrapeComplete() {
-                                    if (!found) {
-                                        mUiHandler.sendMessageDelayed(
-                                                Message.obtain(mUiHandler, WHAT_DO_ENCRYPT, new DoEncryptParams(
-                                                        params, nodeId, actionIntent, skbWasVisible, retryCount + 1, saveParams, addLink, padding, packagename)), DELAY_REPEAT_WHILE_NODE_NOT_FOUND);
-
-                                    }
-                                }
-                            });
-
-                            return;
-                        } else {
-                            Ln.w("OOO: GIVING UP!");
-                            //node not found, so be it, use the current focused noode
-                            realNodeId = node.hashCode();
-                            //continue
-
-                        }
-                    }
 
                     final String packagename = node.getPackageName().toString();
 
@@ -1399,7 +1394,7 @@ public class Core extends CoreContract implements Handler.Callback {
                             mPendingUserInteractionsImmediate.add(targetText);
                         }
 
-                        new SetTextAction(realNodeId, targetText, skbWasVisible, 0, params).performAction(node);
+                        new SetTextAction(target, targetText, skbWasVisible, 0, params).performAction(node);
                     } catch (final UserInteractionRequiredException e) {
                         e.printStackTrace();
 
@@ -1416,7 +1411,7 @@ public class Core extends CoreContract implements Handler.Callback {
                             public void onResultFromPendingIntentActivity(int requestCode, int resultCode, Intent data) {
                                 if (resultCode == Activity.RESULT_OK) {
 
-                                    doEncrypt(params, nodeId, data, skbWasVisible, 0, saveParams, addLink, innerPadding, packagename);
+                                    doEncrypt(params, target, data, skbWasVisible, 0, saveParams, addLink, innerPadding, packagename);
                                 } else {
                                     Ln.w("user cancelled pendingintent activity");
                                 }
@@ -1454,34 +1449,14 @@ public class Core extends CoreContract implements Handler.Callback {
                     }
 
                     if (retryCount == CLICK_NODE_WHEN_NODE_NOT_FOUND_REPEAT_COUNT) {
-                        //try to click it
-                        Ln.w("OOO: CLICKING IT");
-                        clickNodeById(nodeId);
+                        Ln.w("OOO: CLICKING TARGET");
+                        clickTarget(target);
                     }
 
-
-                    mOversecAccessibilityService.performNodeAction(new OversecAccessibilityService.PerformNodeAction() {
-
-                        boolean found = false;
-
-                        @Override
-                        public void onNodeScanned(AccessibilityNodeInfo node) {
-
-                            if (node.isFocused() && node.hashCode() == nodeId) {
-                                found = true;
-                                doEncrypt(params, nodeId, actionIntent, skbWasVisible, retryCount + 1, saveParams, addLink, innerPadding, packagename);
-                            }
-                        }
-
-                        @Override
-                        public void onScrapeComplete() {
-                            if (!found) {
-                                mUiHandler.sendMessageDelayed(
-                                        Message.obtain(mUiHandler, WHAT_DO_ENCRYPT, new DoEncryptParams(
-                                                params, nodeId, actionIntent, skbWasVisible, retryCount + 1, saveParams, addLink, innerPadding, packagename)), DELAY_REPEAT_WHILE_NODE_NOT_FOUND);
-                            }
-                        }
-                    });
+                    mUiHandler.sendMessageDelayed(
+                            Message.obtain(mUiHandler, WHAT_DO_ENCRYPT, new DoEncryptParams(
+                                    params, target, actionIntent, skbWasVisible, retryCount + 1, saveParams, addLink, innerPadding, packagename)),
+                            DELAY_REPEAT_WHILE_NODE_NOT_FOUND);
                 }
             });
         }
@@ -1690,14 +1665,14 @@ public class Core extends CoreContract implements Handler.Callback {
     }
 
     private class SetTextParams {
-        int nodeId;
+        FocusedNodeTarget target;
         String newText;
         boolean bringUpSkb;
         boolean repeatIfFocusedNodeNotFound;
         int retryCount;
 
-        public SetTextParams(int nodeId, String newText, boolean bringUpSkb, boolean repeatIfFocusedNodeNotFound, int retryCount) {
-            this.nodeId = nodeId;
+        public SetTextParams(FocusedNodeTarget target, String newText, boolean bringUpSkb, boolean repeatIfFocusedNodeNotFound, int retryCount) {
+            this.target = target;
             this.newText = newText;
             this.bringUpSkb = bringUpSkb;
             this.repeatIfFocusedNodeNotFound = repeatIfFocusedNodeNotFound;
@@ -1708,10 +1683,10 @@ public class Core extends CoreContract implements Handler.Callback {
     public void setText_UI(SetTextParams p) {
         checkUiThread();
 
-        setText_UI(p.nodeId, p.newText, p.bringUpSkb, p.retryCount);
+        setText_UI(p.target, p.newText, p.bringUpSkb, p.retryCount);
     }
 
-    public void setText_UI(final int nodeId,
+    public void setText_UI(final FocusedNodeTarget target,
                            final String newText,
                            final boolean bringUpSkb,
                            final int retryCount) {
@@ -1719,21 +1694,21 @@ public class Core extends CoreContract implements Handler.Callback {
 
         OversecAccessibilityService aOversecAccessibilityService = mOversecAccessibilityService;
         if (aOversecAccessibilityService != null) {
-            aOversecAccessibilityService.performActionOnFocusedNode(
-                    new SetTextAction(nodeId, newText, bringUpSkb, retryCount, null));
+            aOversecAccessibilityService.performActionOnTargetNode(
+                    target, new SetTextAction(target, newText, bringUpSkb, retryCount, null));
             aOversecAccessibilityService.sendScrapeAllMessage("setText_UI", null);
         }
     }
 
     private class SetTextAction implements OversecAccessibilityService.PerformFocusedNodeAction {
         private final AbstractEncryptionParams params;
-        int nodeId;
+        FocusedNodeTarget target;
         String newText;
         boolean bringUpSkb;
         int retryCount;
 
-        public SetTextAction(int nodeId, String newText, boolean bringUpSkb, int retryCount, AbstractEncryptionParams params) {
-            this.nodeId = nodeId;
+        public SetTextAction(FocusedNodeTarget target, String newText, boolean bringUpSkb, int retryCount, AbstractEncryptionParams params) {
+            this.target = target;
             this.newText = newText;
             this.bringUpSkb = bringUpSkb;
             this.retryCount = retryCount;
@@ -1743,16 +1718,6 @@ public class Core extends CoreContract implements Handler.Callback {
         @Override
         public void performAction(AccessibilityNodeInfo node) {
             Ln.d("OOO: STA performAction");
-
-            if (node.hashCode() != nodeId) {
-                Ln.w("OOO: STA unexpected node id!");
-                if (retryCount < MAX_REPEAT_WHILE_NODE_NOT_FOUND) {
-                    mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_SET_TEXT,
-                            new SetTextParams(nodeId, newText, bringUpSkb, false, retryCount + 1)));
-                }
-                return;
-            }
-
 
             if (bringUpSkb) {
                 bringUpSkb(node);
@@ -1830,35 +1795,29 @@ public class Core extends CoreContract implements Handler.Callback {
                 return;
             }
 
-            clickNodeById(nodeId);
+            clickTarget(target);
 
             mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_SET_TEXT,
-                    new SetTextParams(nodeId, newText, bringUpSkb, false, retryCount + 1)));
+                    new SetTextParams(target, newText, bringUpSkb, false, retryCount + 1)));
         }
     }
 
-    private void clickNodeById(final int nodeId) {
-        //try to click the node, this at least required for skype!
-        mOversecAccessibilityService.performNodeAction(new OversecAccessibilityService.PerformNodeAction() {
-
-            boolean mFound = false;
-
+    private void clickTarget(final FocusedNodeTarget target) {
+        OversecAccessibilityService acs = mOversecAccessibilityService;
+        if (acs == null || target == null) {
+            return;
+        }
+        acs.performActionOnTargetNode(target, new OversecAccessibilityService.PerformFocusedNodeAction() {
             @Override
-            public void onNodeScanned(AccessibilityNodeInfo node) {
-
-                if (node.hashCode() == nodeId) {
-                    mFound = true;
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                        node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                    }
+            public void performAction(AccessibilityNodeInfo node) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
                 }
             }
 
             @Override
-            public void onScrapeComplete() {
-                if (!mFound) {
-                    Ln.w("Tried to click node %s but couldn't find it!", nodeId);
-                }
+            public void performActionWhenNothingFocused() {
+                Ln.w("Tried to click target but couldn't find it!");
             }
         });
     }
@@ -1977,6 +1936,10 @@ public class Core extends CoreContract implements Handler.Callback {
         return r == null ? "" : r;
     }
 
+    private static FocusedNodeTarget captureNodeTarget(AccessibilityNodeInfo node) {
+        return node == null ? null : new FocusedNodeTarget(node);
+    }
+
     public void doEncryptAndPutToClipboard(String s, String packagename, Intent data, byte[] innerPadding) {
 
         mUiHandler.sendMessage(Message.obtain(mUiHandler, WHAT_ENCRYPT_CLIPBOARD, new Object[]{s, packagename, data, innerPadding}));
@@ -2072,4 +2035,3 @@ public class Core extends CoreContract implements Handler.Callback {
         return mIgnoredSimpleKeyTexts.containsKey(txt);
     }
 }
-

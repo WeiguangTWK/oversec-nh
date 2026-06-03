@@ -9,8 +9,9 @@ public class Bag<T> {
         if (initialCapacity < 0)
             throw new IllegalArgumentException
                     ("The initialCapacity is negative: " + initialCapacity);
-        //noinspection unchecked
-        data = (T[]) new Object[initialCapacity];
+        @SuppressWarnings("unchecked")
+        T[] initialArray = (T[]) new Object[initialCapacity];
+        data = initialArray;
         manyItems = 0;
     }
 
@@ -27,8 +28,9 @@ public class Bag<T> {
         T[] biggerArray;
 
         if (data.length < minimumCapacity) {
-            //noinspection unchecked
-            biggerArray = (T[]) new Object[minimumCapacity];
+            @SuppressWarnings("unchecked")
+            T[] newArray = (T[]) new Object[minimumCapacity];
+            biggerArray = newArray;
             System.arraycopy(data, 0, biggerArray, 0, manyItems);
             data = biggerArray;
         }

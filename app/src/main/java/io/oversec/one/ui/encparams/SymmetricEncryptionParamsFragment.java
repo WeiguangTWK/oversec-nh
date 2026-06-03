@@ -1,11 +1,12 @@
 package io.oversec.one.ui.encparams;
 
 import android.app.Activity;
-import android.app.Fragment;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PorterDuff;
 import android.os.Bundle;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.widget.AppCompatCheckBox;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -30,7 +31,6 @@ import io.oversec.one.crypto.sym.SymmetricKeyEncrypted;
 import io.oversec.one.crypto.sym.ui.KeyImportCreateActivity;
 import io.oversec.one.crypto.sym.ui.KeysFragment;
 import io.oversec.one.crypto.sym.ui.SymmetricKeyRecyclerViewAdapter;
-import io.oversec.one.crypto.ui.EncryptionParamsActivityContract;
 import io.oversec.one.R;
 import io.oversec.one.crypto.ui.AbstractEncryptionParamsFragment;
 import io.oversec.one.crypto.ui.util.SimpleDividerItemDecoration;
@@ -53,9 +53,10 @@ public class SymmetricEncryptionParamsFragment extends AbstractEncryptionParamsF
     private ViewGroup mVgNoKey;
     private XCoderAndPadderSpinnerAdapter mSymPadderAdapter;
     private TextView mTvWarning;
-
-    private ActivityResultWrapper mTempActivityResult;
     private CheckBox mCbAddLink;
+    private final ActivityResultLauncher<Intent> mCreateKeyLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result ->
+                    handleCreateKeyResult(result.getResultCode(), result.getData()));
 
 
     public static SymmetricEncryptionParamsFragment newInstance(String packagename, boolean isForTextEncryption, Bundle state) {
@@ -129,8 +130,7 @@ public class SymmetricEncryptionParamsFragment extends AbstractEncryptionParamsF
 
             @Override
             public void onClick(View v) {
-
-                KeyImportCreateActivity.Companion.showAddKeyDialog(SymmetricEncryptionParamsFragment.this, EncryptionParamsActivityContract.REQUEST_CODE__CREATE_NEW_KEY);
+                KeyImportCreateActivity.Companion.showAddKeyDialog(SymmetricEncryptionParamsFragment.this, mCreateKeyLauncher);
 
             }
         });
@@ -153,8 +153,6 @@ public class SymmetricEncryptionParamsFragment extends AbstractEncryptionParamsF
 
         aKeystore.addListener(this);
 
-        handleActivityResult();
-
         return getMView();
     }
 
@@ -166,40 +164,17 @@ public class SymmetricEncryptionParamsFragment extends AbstractEncryptionParamsF
     }
 
 
-    private void handleActivityResult() {
-        if (mTempActivityResult != null) {
-            int requestCode = mTempActivityResult.getRequestCode();
-            int resultCode = mTempActivityResult.getResultCode();
-            Intent data = mTempActivityResult.getData();
-            mTempActivityResult = null;
-
-            if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE__CREATE_NEW_KEY) {
-                if (resultCode == Activity.RESULT_OK) {
-
-                    List<Long> ss = mKeysAdapter.getSelectedKeyIds();
-                    if (data != null) {
-                        long keyId = data.getLongExtra(KeysFragment.EXTRA_KEY_ID, 0);
-                        ss.add(keyId);
-                    }
-
-                    updateList(ss);
-                }
-                updateList(mKeysAdapter.getSelectedKeyIds());
+    private void handleCreateKeyResult(int resultCode, Intent data) {
+        if (resultCode == Activity.RESULT_OK) {
+            List<Long> ss = mKeysAdapter.getSelectedKeyIds();
+            if (data != null) {
+                long keyId = data.getLongExtra(KeysFragment.EXTRA_KEY_ID, 0);
+                ss.add(keyId);
             }
+
+            updateList(ss);
         }
-    }
-
-    @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        mTempActivityResult = new ActivityResultWrapper(requestCode, resultCode, data);
-
-        //DAMNIT the liefecycle is indeed different whether activity os destroyed andrecreated or just stays around!
-        if (getMView() != null) {
-            handleActivityResult();
-        } else {
-            //will be handled in onCreateView
-        }
-
+        updateList(mKeysAdapter.getSelectedKeyIds());
     }
 
     @Override
@@ -228,8 +203,8 @@ public class SymmetricEncryptionParamsFragment extends AbstractEncryptionParamsF
     class SymmetricKeyWithCheckboxRecyclerViewAdapter extends SymmetricKeyRecyclerViewAdapter {
         List<Long> mSelectedKeyIds = new ArrayList<>();
 
-        public SymmetricKeyWithCheckboxRecyclerViewAdapter(Fragment fragment, List<SymmetricKeyEncrypted> items, List<Long> preselectedKeyIds, OversecKeystore2 keystore) {
-            super(fragment, items);
+        public SymmetricKeyWithCheckboxRecyclerViewAdapter(Context context, List<SymmetricKeyEncrypted> items, List<Long> preselectedKeyIds, OversecKeystore2 keystore) {
+            super(context, items);
             mSelectedKeyIds = preselectedKeyIds == null ? new ArrayList<Long>() : preselectedKeyIds;
         }
 
@@ -328,7 +303,7 @@ public class SymmetricEncryptionParamsFragment extends AbstractEncryptionParamsF
         }
 
 
-        return new SymmetricKeyWithCheckboxRecyclerViewAdapter(SymmetricEncryptionParamsFragment.this, keys, selectedKeys, aKeystore);
+        return new SymmetricKeyWithCheckboxRecyclerViewAdapter(requireContext(), keys, selectedKeys, aKeystore);
     }
 
 

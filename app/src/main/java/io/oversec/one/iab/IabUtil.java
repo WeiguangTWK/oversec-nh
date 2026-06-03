@@ -1,7 +1,6 @@
 package io.oversec.one.iab;
 
 import android.app.Activity;
-import android.app.Fragment;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -11,6 +10,7 @@ import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
 
 import com.afollestad.materialdialogs.DialogAction;
 import com.afollestad.materialdialogs.MaterialDialog;
@@ -158,7 +158,7 @@ public class IabUtil extends BroadcastReceiver implements IabHelper.OnIabSetupFi
                 if (isFullVersion) {
                     okRunnable.run();
                 } else {
-                    makePurchaseDialog(fragment.getActivity())
+                    makePurchaseDialog(fragment.requireActivity())
                             .onPositive(new MaterialDialog.SingleButtonCallback() {
                                 @Override
                                 public void onClick(@NonNull MaterialDialog dialog, @NonNull DialogAction which) {

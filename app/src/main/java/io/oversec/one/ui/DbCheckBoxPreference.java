@@ -1,8 +1,8 @@
 package io.oversec.one.ui;
 
 import android.content.Context;
-import android.preference.CheckBoxPreference;
-import android.preference.Preference;
+import androidx.preference.CheckBoxPreference;
+import androidx.preference.Preference;
 
 public abstract class DbCheckBoxPreference extends CheckBoxPreference {
     public DbCheckBoxPreference(Context ctx, String title, String summary) {

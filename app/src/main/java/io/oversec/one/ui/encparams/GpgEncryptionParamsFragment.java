@@ -9,6 +9,9 @@ import android.content.IntentSender;
 import android.graphics.PorterDuff;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.ContextCompat;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -76,11 +79,18 @@ public class GpgEncryptionParamsFragment extends AbstractEncryptionParamsFragmen
     private ViewGroup mVgOkcOk, mVgOkcNo;
     private TextView mTvOkcStatus;
     private Button mBtnInstallPlay, mBtnInstallFdroid;
-
-    private ActivityResultWrapper mTempActivityResult;
     private StandaloneTooltipView mTooltipSelectOwnKey;
     private int mTvPgpOwnNameTextColor;
     private CheckBox mCbAddLink;
+    private final ActivityResultLauncher<IntentSenderRequest> mDownloadKeyLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), result ->
+                    handleActivityResult(EncryptionParamsActivityContract.REQUEST_CODE_DOWNLOAD_KEY, result.getResultCode(), result.getData()));
+    private final ActivityResultLauncher<IntentSenderRequest> mRecipientSelectionLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), result ->
+                    handleActivityResult(EncryptionParamsActivityContract.REQUEST_CODE_RECIPIENT_SELECTION, result.getResultCode(), result.getData()));
+    private final ActivityResultLauncher<IntentSenderRequest> mOwnSignatureKeyLauncher =
+            registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), result ->
+                    handleActivityResult(EncryptionParamsActivityContract.REQUEST_CODE_OWNSIGNATUREKEY_SELECTION, result.getResultCode(), result.getData()));
 
     public static GpgEncryptionParamsFragment newInstance(String packagename, boolean isForTextEncryption, Bundle state) {
         GpgEncryptionParamsFragment fragment = new GpgEncryptionParamsFragment();
@@ -265,8 +275,6 @@ public class GpgEncryptionParamsFragment extends AbstractEncryptionParamsFragmen
 
         checkVisibilities();
 
-        handleActivityResult();
-
         return getMView();
     }
 
@@ -318,85 +326,48 @@ public class GpgEncryptionParamsFragment extends AbstractEncryptionParamsFragmen
         super.onDestroyView();
     }
 
-    private void handleActivityResult() {
-        if (mTempActivityResult != null) {
-            int requestCode = mTempActivityResult.getRequestCode();
-            int resultCode = mTempActivityResult.getResultCode();
-            Intent data = mTempActivityResult.getData();
-            mTempActivityResult = null;
-
-
-            if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE_DOWNLOAD_KEY) {
-                if (resultCode == Activity.RESULT_OK) {
-                    handleDownloadedKey(getActivity(), mTempDownloadKeyId, data);
-                } else {
-                    // Ln.w("user cancelled pendingintent activity");
-                }
-            } else if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE_RECIPIENT_SELECTION) {
-                if (resultCode == Activity.RESULT_OK) {
-                    if (data != null) {
-                        if (data.hasExtra(OpenPgpApi.EXTRA_KEY_IDS) || data.hasExtra("key_ids_selected"/*OpenPgpApi.EXTRA_KEY_IDS_SELECTED*/)) {
-                            long[] keyIds = new long[0];
-                            if (data.hasExtra(OpenPgpApi.EXTRA_KEY_IDS)) {
-                                keyIds = data.getLongArrayExtra(OpenPgpApi.EXTRA_KEY_IDS);
-                            } else if (data.hasExtra("key_ids_selected"/*OpenPgpApi.EXTRA_KEY_IDS_SELECTED*/)) {
-                                keyIds = data.getLongArrayExtra("key_ids_selected"/*OpenPgpApi.EXTRA_KEY_IDS_SELECTED*/);
-                            }
-                            //not sure why Anal Studio / Gradle can't find the new EXTRA_KEY_IDS_SELECTED constant
-                            //also not sure why they had to change it, but well, need to check for both
-
-                            Long[] keys = new Long[keyIds.length];
-                            for (int i = 0; i < keyIds.length; i++) {
-                                keys[i] = keyIds[i];
-                            }
-                            if (keyIds != null && keyIds.length > 0) {
-
-                                mEditorPgpEncryptionParams.addPublicKeyIds(keys, getGpgEncryptionHandler(getActivity()).getGpgOwnPublicKeyId());
-                                updatePgpRecipientsList();
-                            }
-                        } else {
-                            triggerRecipientSelection(EncryptionParamsActivityContract.REQUEST_CODE_RECIPIENT_SELECTION, data);
-                        }
-                    } else {
-                        //Ln.w("REQUEST_CODE_RECIPIENT_SELECTION returned without data");
+    private void handleActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE_DOWNLOAD_KEY) {
+            if (resultCode == Activity.RESULT_OK) {
+                handleDownloadedKey(getActivity(), mTempDownloadKeyId, data);
+            }
+        } else if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE_RECIPIENT_SELECTION) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                if (data.hasExtra(OpenPgpApi.EXTRA_KEY_IDS) || data.hasExtra("key_ids_selected"/*OpenPgpApi.EXTRA_KEY_IDS_SELECTED*/)) {
+                    long[] keyIds = new long[0];
+                    if (data.hasExtra(OpenPgpApi.EXTRA_KEY_IDS)) {
+                        keyIds = data.getLongArrayExtra(OpenPgpApi.EXTRA_KEY_IDS);
+                    } else if (data.hasExtra("key_ids_selected"/*OpenPgpApi.EXTRA_KEY_IDS_SELECTED*/)) {
+                        keyIds = data.getLongArrayExtra("key_ids_selected"/*OpenPgpApi.EXTRA_KEY_IDS_SELECTED*/);
                     }
+                    //not sure why Anal Studio / Gradle can't find the new EXTRA_KEY_IDS_SELECTED constant
+                    //also not sure why they had to change it, but well, need to check for both
 
-                } else {
-                    // Ln.w("REQUEST_CODE_RECIPIENT_SELECTION returned with result code %s" , resultCode);
-                }
-            } else if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE_OWNSIGNATUREKEY_SELECTION) {
-                if (resultCode == Activity.RESULT_OK) {
-                    if (data != null) {
-                        if (data.hasExtra(OpenPgpApi.EXTRA_SIGN_KEY_ID)) {
-                            long signKeyId = data.getLongExtra(OpenPgpApi.EXTRA_SIGN_KEY_ID, 0);
-                            mEditorPgpEncryptionParams.setOwnPublicKey(signKeyId);
-                            getGpgEncryptionHandler(getActivity()).setGpgOwnPublicKeyId(signKeyId);
-                            updatePgpOwnKey();
-                            updatePgpRecipientsList();
-
-                        } else {
-                            triggerSigningKeySelection(data);
-                        }
-                    } else {
-                        // Ln.w("ACTION_GET_SIGN_KEY_ID returned without data");
+                    Long[] keys = new Long[keyIds.length];
+                    for (int i = 0; i < keyIds.length; i++) {
+                        keys[i] = keyIds[i];
                     }
-
+                    if (keyIds.length > 0) {
+                        mEditorPgpEncryptionParams.addPublicKeyIds(keys, getGpgEncryptionHandler(getActivity()).getGpgOwnPublicKeyId());
+                        updatePgpRecipientsList();
+                    }
                 } else {
-                    //   Ln.w("ACTION_GET_SIGN_KEY_ID returned with result code %s", resultCode);
+                    triggerRecipientSelection(EncryptionParamsActivityContract.REQUEST_CODE_RECIPIENT_SELECTION, data);
                 }
             }
-        }
-    }
+        } else if (requestCode == EncryptionParamsActivityContract.REQUEST_CODE_OWNSIGNATUREKEY_SELECTION) {
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                if (data.hasExtra(OpenPgpApi.EXTRA_SIGN_KEY_ID)) {
+                    long signKeyId = data.getLongExtra(OpenPgpApi.EXTRA_SIGN_KEY_ID, 0);
+                    mEditorPgpEncryptionParams.setOwnPublicKey(signKeyId);
+                    getGpgEncryptionHandler(getActivity()).setGpgOwnPublicKeyId(signKeyId);
+                    updatePgpOwnKey();
+                    updatePgpRecipientsList();
 
-    @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        mTempActivityResult = new ActivityResultWrapper(requestCode, resultCode, data);
-
-        //DAMNIT the liefecycle is indeed different whether activity os destroyed andrecreated or just stays around!
-        if (getMView() != null) {
-            handleActivityResult();
-        } else {
-            //will be handled in onCreateView
+                } else {
+                    triggerSigningKeySelection(data);
+                }
+            }
         }
     }
 
@@ -585,13 +556,7 @@ public class GpgEncryptionParamsFragment extends AbstractEncryptionParamsFragmen
         if (pi != null) {
 
             mTempDownloadKeyId = keyId;
-            try {
-                getActivity().startIntentSenderForResult(pi.getIntentSender(), EncryptionParamsActivityContract.REQUEST_CODE_DOWNLOAD_KEY, null, 0, 0, 0);
-
-            } catch (IntentSender.SendIntentException e) {
-                e.printStackTrace();
-                //TODO what now?
-            }
+            mDownloadKeyLauncher.launch(new IntentSenderRequest.Builder(pi.getIntentSender()).build());
 
         }
 
@@ -600,12 +565,7 @@ public class GpgEncryptionParamsFragment extends AbstractEncryptionParamsFragmen
     public void triggerRecipientSelection(int requestCode, Intent actionIntent) {
         PendingIntent pi = getGpgEncryptionHandler(getMView().getContext()).triggerRecipientSelection(actionIntent);
         if (pi != null) {
-            try {
-                getActivity().startIntentSenderForResult(pi.getIntentSender(), requestCode, null, 0, 0, 0);
-            } catch (IntentSender.SendIntentException e) {
-                e.printStackTrace();
-                //TODO now what?
-            }
+            mRecipientSelectionLauncher.launch(new IntentSenderRequest.Builder(pi.getIntentSender()).build());
 
 
         } else {
@@ -616,12 +576,7 @@ public class GpgEncryptionParamsFragment extends AbstractEncryptionParamsFragmen
     public void triggerSigningKeySelection(Intent actionIntent) {
         PendingIntent pi = getGpgEncryptionHandler(getMView().getContext()).triggerSigningKeySelection(actionIntent);
         if (pi != null) {
-            try {
-                getActivity().startIntentSenderForResult(pi.getIntentSender(), EncryptionParamsActivityContract.REQUEST_CODE_OWNSIGNATUREKEY_SELECTION, null, 0, 0, 0);
-            } catch (IntentSender.SendIntentException e) {
-                e.printStackTrace();
-                //TODO now what?
-            }
+            mOwnSignatureKeyLauncher.launch(new IntentSenderRequest.Builder(pi.getIntentSender()).build());
 
 
         } else {

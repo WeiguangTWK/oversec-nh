@@ -1,18 +1,19 @@
 package io.oversec.one.iab;
 
 import android.app.Activity;
-import android.app.Fragment;
 import android.content.Context;
 import android.content.Intent;
-import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import io.oversec.one.R;
 
@@ -26,7 +27,7 @@ public class PurchaseActivity extends AppCompatActivity implements IabHelper.OnI
     private RecyclerView mListView;
 
     public static void showForResult(Fragment f, int requestCode) {
-        final Intent intent = new Intent(f.getActivity(), PurchaseActivity.class);
+        final Intent intent = new Intent(f.requireActivity(), PurchaseActivity.class);
         f.startActivityForResult(intent,
                 requestCode);
     }

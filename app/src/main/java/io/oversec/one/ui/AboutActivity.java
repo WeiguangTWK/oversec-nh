@@ -1,19 +1,19 @@
 package io.oversec.one.ui;
 
-import android.app.Fragment;
-import android.app.FragmentManager;
 import android.content.Context;
 import android.content.Intent;
-
-import com.google.android.material.tabs.TabLayout;
-import androidx.legacy.app.FragmentPagerAdapter;
-import androidx.viewpager.widget.ViewPager;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
-
-
 import android.os.Bundle;
 import android.view.MenuItem;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.fragment.app.Fragment;
+import androidx.viewpager2.adapter.FragmentStateAdapter;
+import androidx.viewpager2.widget.ViewPager2;
+
+import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.tabs.TabLayoutMediator;
 
 import io.oversec.one.R;
 import io.oversec.one.iab.IabUtil;
@@ -30,8 +30,7 @@ public class AboutActivity extends AppCompatActivity {
     }
 
     private SectionsPagerAdapter mSectionsPagerAdapter;
-
-    private ViewPager mViewPager;
+    private ViewPager2 mViewPager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,13 +48,17 @@ public class AboutActivity extends AppCompatActivity {
 
         // Create the adapter that will return a fragment for each of the three
         // primary sections of the activity.
-        mSectionsPagerAdapter = new SectionsPagerAdapter(getFragmentManager());
+        mSectionsPagerAdapter = new SectionsPagerAdapter();
 
         // Set up the ViewPager with the sections adapter.
-        mViewPager = (ViewPager) findViewById(R.id.pager);
-        //noinspection ConstantConditions
+        mViewPager = (ViewPager2) findViewById(R.id.pager);
         mViewPager.setAdapter(mSectionsPagerAdapter);
-        mTabLayout.setupWithViewPager(mViewPager);
+        new TabLayoutMediator(mTabLayout, mViewPager, new TabLayoutMediator.TabConfigurationStrategy() {
+            @Override
+            public void onConfigureTab(@NonNull TabLayout.Tab tab, int position) {
+                tab.setText(mSectionsPagerAdapter.getPageTitle(position));
+            }
+        }).attach();
     }
 
     @Override
@@ -67,14 +70,14 @@ public class AboutActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    public class SectionsPagerAdapter extends FragmentPagerAdapter {
+    public class SectionsPagerAdapter extends FragmentStateAdapter {
 
-        public SectionsPagerAdapter(FragmentManager fm) {
-            super(fm);
+        public SectionsPagerAdapter() {
+            super(AboutActivity.this);
         }
 
-        @Override
-        public Fragment getItem(int position) {
+        @NonNull
+        private Fragment getFragmentForPosition(int position) {
             switch (position) {
                 case 0:
                     return new AboutFragment();
@@ -83,15 +86,20 @@ public class AboutActivity extends AppCompatActivity {
                 case 2:
                     return mIsIabAvailable ? new PurchasesFragment() : new DonationFragment();
             }
-            return null;
+            throw new IllegalArgumentException("Unsupported page index: " + position);
+        }
+
+        @NonNull
+        @Override
+        public Fragment createFragment(int position) {
+            return getFragmentForPosition(position);
         }
 
         @Override
-        public int getCount() {
+        public int getItemCount() {
             return 3;
         }
 
-        @Override
         public CharSequence getPageTitle(int position) {
             switch (position) {
                 case 0:
@@ -101,7 +109,7 @@ public class AboutActivity extends AppCompatActivity {
                 case 2:
                     return getString(mIsIabAvailable ? R.string.about_tab_purchases : R.string.about_tab_donations);
             }
-            return null;
+            throw new IllegalArgumentException("Unsupported page index: " + position);
         }
     }
 }
